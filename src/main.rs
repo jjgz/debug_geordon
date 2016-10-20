@@ -1,3 +1,5 @@
+#![feature(slice_patterns)]
+
 extern crate serde_json;
 extern crate rnet;
 
@@ -61,6 +63,9 @@ fn main() {
                     }
                     Netmessage::Heartbeat => {}
                     Netmessage::ReqNetstats => {}
+                    Netmessage::DebugGeordon(s) => {
+                        println!("Debug message: {}", s);
+                    }
                     _ => println!("Unhandled message: {:?}", m),
                 }
             }
@@ -71,10 +76,20 @@ fn main() {
         // Handle input from terminal.
         match input_receiver.try_recv() {
             Ok(line) => {
+                let words = line.split(' ').collect::<Vec<_>>();
                 // Match the String.
-                match &line as &str {
-                    "hello" => println!("It got hello"),
-                    "hi" => println!("Got hi"),
+                match words.as_slice() {
+                    &["move", x, y, v, angle, av] => {
+                        serde_json::to_writer(&mut stream, &Netmessage::Movement(
+                            rnet::Point{
+                                x: x.parse().unwrap(),
+                                y: y.parse().unwrap(),
+                                v: v.parse().unwrap(),
+                                angle: angle.parse().unwrap(),
+                                av: av.parse().unwrap(),
+                            }
+                        )).unwrap();
+                    }
                     _ => println!("dunno"),
                 }
             }
