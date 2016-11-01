@@ -4,9 +4,11 @@ extern crate serde_json;
 extern crate rnet;
 extern crate glium;
 extern crate glowygraph;
+extern crate itertools;
 
 use glium::{Surface, DisplayBuild};
 use rnet::Netmessage;
+use itertools::Itertools;
 
 fn main() {
     use std::env::args;
@@ -15,6 +17,7 @@ fn main() {
     use std::io::{Read, Write};
     use std::net::TcpStream;
     use std::sync::mpsc::{channel, TryRecvError};
+    use std::time;
     use std::thread;
     let bindaddress = args()
         .nth(1)
@@ -57,6 +60,10 @@ fn main() {
 
     let display = glium::glutin::WindowBuilder::new().with_vsync().build_glium().unwrap();
     let glowy = glowygraph::render2::Renderer::new(&display);
+    let mut difficulty_grid = vec![0u8; 128 * 128];
+
+    let mut row_requests = (0usize..0).peekable();
+    let mut row_request_beginning = time::Instant::now();
 
     loop {
         // Get window dimensions.
@@ -84,6 +91,26 @@ fn main() {
                     }
                     Netmessage::Heartbeat => {}
                     Netmessage::ReqNetstats => {}
+                    Netmessage::GDHalfRow(v) => {
+                        if let Some(n) = row_requests.next() {
+                            difficulty_grid.chunks_mut(64).nth(n as usize).unwrap().iter_mut().set_from(v);
+                            // Check if this was the last one.
+                            if row_requests.peek().is_none() {
+                                // Since it was, print out the duration.
+                                let difference = time::Instant::now() - row_request_beginning;
+                                let seconds = difference.as_secs();
+                                let nanos = difference.subsec_nanos();
+                                let seconds = seconds as f64 + nanos as f64 * 0.000000001;
+                                println!("Half-row request fulfilled after {} seconds.", seconds);
+                            } else {
+                                // More rows are to be requested.
+                                serde_json::to_writer(&mut stream,
+                                   &Netmessage::GDReqHalfRow(*row_requests.peek().unwrap() as u8)).unwrap();
+                            }
+                        } else {
+                            println!("Warning: Got a half-row when none were requested.");
+                        }
+                    }
                     Netmessage::DebugGeordon(s) => {
                         println!("Debug message: {}", s);
                     }
@@ -111,7 +138,34 @@ fn main() {
                             }
                         )).unwrap();
                     }
-                    _ => println!("dunno"),
+                    &["move", ..] => {
+                        println!("Usage: move x y v angle av");
+                    }
+                    &["rows", n] => {
+                        let n: usize = n.parse().unwrap();
+                        row_requests = (n..n+1).peekable();
+                        row_request_beginning = time::Instant::now();
+
+                        serde_json::to_writer(&mut stream,
+                              &Netmessage::GDReqHalfRow(n as u8)).unwrap();
+                    }
+                    &["rows", n, m] => {
+                        let n: usize = n.parse().unwrap();
+                        let m: usize = m.parse().unwrap();
+                        if n < m {
+                            row_requests = (n..m).peekable();
+                            row_request_beginning = time::Instant::now();
+
+                            serde_json::to_writer(&mut stream,
+                                                  &Netmessage::GDReqHalfRow(n as u8)).unwrap();
+                        } else {
+                            println!("Error: The first argument to \"rows\" must be less than the second.");
+                        }
+                    }
+                    &["rows", ..] => {
+                        println!("Usage: rows start [end]");
+                    }
+                    _ => println!("Commands: move, rows"),
                 }
             }
             Err(TryRecvError::Disconnected) => panic!("Input lost."),
