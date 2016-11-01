@@ -165,7 +165,11 @@ fn main() {
                     &["rows", ..] => {
                         println!("Usage: rows start [end]");
                     }
-                    _ => println!("Commands: move, rows"),
+                    &["fakerow"] => {
+                        serde_json::to_writer(&mut stream,
+                                              &Netmessage::GDHalfRow(vec![0; 64])).unwrap();
+                    }
+                    _ => println!("Commands: move, rows, fakerow"),
                 }
             }
             Err(TryRecvError::Disconnected) => panic!("Input lost."),
