@@ -5,4 +5,6 @@ authors = ["Geordon Worley <vadixidav@gmail.com>"]
 
 [dependencies]
 serde_json = "0.8"
+glium = "0.15.0"
+glowygraph = "0.7.2"
 rnet = {git = "https://github.com/jjgz/rnet"}

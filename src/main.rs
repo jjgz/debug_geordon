@@ -2,7 +2,10 @@
 
 extern crate serde_json;
 extern crate rnet;
+extern crate glium;
+extern crate glowygraph;
 
+use glium::{Surface, DisplayBuild};
 use rnet::Netmessage;
 
 fn main() {
@@ -52,7 +55,25 @@ fn main() {
         }
     });
 
+    let display = glium::glutin::WindowBuilder::new().with_vsync().build_glium().unwrap();
+    let glowy = glowygraph::render2::Renderer::new(&display);
+
     loop {
+        // Get window dimensions.
+        let dims = display.get_framebuffer_dimensions();
+        // Multiply this by width coordinates to get normalized screen coordinates.
+        let hscale = dims.1 as f32 / dims.0 as f32;
+        // Get the render target.
+        let mut target = display.draw();
+        // Clear the screen.
+        target.clear_color(0.0, 0.0, 0.0, 1.0);
+        // Compute the projection matrix.
+        let projection =
+        [[1.0 / hscale, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]];
+
+        // Finish the render.
+        target.finish().unwrap();
+
         // Handle network messages.
         match msg_receiver.try_recv() {
             Ok(m) => {
