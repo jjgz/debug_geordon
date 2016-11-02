@@ -91,6 +91,9 @@ fn main() {
                     }
                     Netmessage::Heartbeat => {}
                     Netmessage::ReqNetstats => {}
+                    Netmessage::GDPing => {
+                        println!("Got ping back!");
+                    }
                     Netmessage::GDHalfRow(v) => {
                         if let Some(n) = row_requests.next() {
                             difficulty_grid.chunks_mut(64).nth(n as usize).unwrap().iter_mut().set_from(v);
@@ -169,7 +172,11 @@ fn main() {
                         serde_json::to_writer(&mut stream,
                                               &Netmessage::GDHalfRow(vec![0; 64])).unwrap();
                     }
-                    _ => println!("Commands: move, rows, fakerow"),
+                    &["ping"] => {
+                        serde_json::to_writer(&mut stream,
+                                              &Netmessage::GDReqPing).unwrap();
+                    }
+                    _ => println!("Commands: move, rows, fakerow, ping"),
                 }
             }
             Err(TryRecvError::Disconnected) => panic!("Input lost."),
