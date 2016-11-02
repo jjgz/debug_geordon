@@ -9,6 +9,7 @@ extern crate itertools;
 use glium::{Surface, DisplayBuild};
 use rnet::Netmessage;
 use itertools::Itertools;
+use glowygraph::render2::Node;
 
 fn main() {
     use std::env::args;
@@ -60,7 +61,7 @@ fn main() {
 
     let display = glium::glutin::WindowBuilder::new().with_vsync().build_glium().unwrap();
     let glowy = glowygraph::render2::Renderer::new(&display);
-    let mut difficulty_grid = vec![0u8; 128 * 128];
+    let mut difficulty_grid = vec![99u8; 128 * 128];
 
     let mut row_requests = (0usize..0).peekable();
     let mut row_request_beginning = time::Instant::now();
@@ -76,7 +77,23 @@ fn main() {
         target.clear_color(0.0, 0.0, 0.0, 1.0);
         // Compute the projection matrix.
         let projection =
-        [[1.0 / hscale, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]];
+        [[1.0 * hscale, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]];
+
+        // Add all the grid locations.
+        glowy.render_nodes(&mut target, [[1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]],
+                           projection, &difficulty_grid.iter().enumerate().map(|(i, e)| {
+            let x = i % 128;
+            let y = i / 128;
+
+            Node{
+                position: [x as f32 / 64.0 - 1.0 + 1.0 / 128.0, y as f32 / 64.0 - 1.0 + 1.0 / 128.0],
+                inner_color: [1.0, 0.0, 0.0, *e as f32 / 100.0],
+                falloff: 0.5,
+                falloff_color: [1.0, 0.0, 0.0, *e as f32 / 100.0],
+                falloff_radius: 1.0/128.0,
+                inner_radius: 0.0,
+            }
+        }).collect::<Vec<_>>());
 
         // Finish the render.
         target.finish().unwrap();
