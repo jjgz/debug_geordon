@@ -24,6 +24,12 @@ fn main() {
         .nth(1)
         .unwrap_or_else(|| panic!("Error: Pass an address in the format \"ip:port\" to bind to."));
 
+    fn dursecond(d: time::Duration) -> f64 {
+        let seconds = d.as_secs();
+        let nanos = d.subsec_nanos();
+        seconds as f64 + nanos as f64 * 0.000000001
+    }
+
     let mut stream = TcpStream::connect::<&str>(&bindaddress).unwrap();
     stream.write(&[42, 72, 69, 76, 76, 79, 42]).unwrap();
 
@@ -65,6 +71,8 @@ fn main() {
 
     let mut row_requests = (0usize..0).peekable();
     let mut row_request_beginning = time::Instant::now();
+
+    let mut last_ping_time = time::Instant::now();
 
     loop {
         // Get window dimensions.
@@ -109,7 +117,8 @@ fn main() {
                     Netmessage::Heartbeat => {}
                     Netmessage::ReqNetstats => {}
                     Netmessage::GDPing => {
-                        println!("Got ping back!");
+                        println!("Ping round-trip time: {} seconds",
+                                 dursecond(time::Instant::now() - last_ping_time));
                     }
                     Netmessage::GDHalfRow(v) => {
                         if let Some(n) = row_requests.next() {
@@ -118,10 +127,8 @@ fn main() {
                             if row_requests.peek().is_none() {
                                 // Since it was, print out the duration.
                                 let difference = time::Instant::now() - row_request_beginning;
-                                let seconds = difference.as_secs();
-                                let nanos = difference.subsec_nanos();
-                                let seconds = seconds as f64 + nanos as f64 * 0.000000001;
-                                println!("Half-row request fulfilled after {} seconds.", seconds);
+                                println!("Half-row request fulfilled after {} seconds.",
+                                         dursecond(difference));
                             } else {
                                 // More rows are to be requested.
                                 serde_json::to_writer(&mut stream,
@@ -192,6 +199,7 @@ fn main() {
                     &["ping"] => {
                         serde_json::to_writer(&mut stream,
                                               &Netmessage::GDReqPing).unwrap();
+                        last_ping_time = time::Instant::now();
                     }
                     _ => println!("Commands: move, rows, fakerow, ping"),
                 }
