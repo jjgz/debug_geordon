@@ -7,8 +7,7 @@ extern crate glowygraph;
 extern crate itertools;
 
 use glium::{Surface, DisplayBuild};
-use rnet::Netmessage;
-use itertools::Itertools;
+use rnet::{Netmessage, Coordinate};
 use glowygraph::render2::Node;
 
 fn main() {
@@ -122,6 +121,7 @@ fn main() {
                     }
                     Netmessage::GDHalfRow(v) => {
                         if let Some(n) = row_requests.next() {
+                            use itertools::Itertools;
                             difficulty_grid.chunks_mut(64).nth(n as usize).unwrap().iter_mut().set_from(v);
                             // Check if this was the last one.
                             if row_requests.peek().is_none() {
@@ -201,7 +201,30 @@ fn main() {
                                               &Netmessage::GDReqPing).unwrap();
                         last_ping_time = time::Instant::now();
                     }
-                    _ => println!("Commands: move, rows, fakerow, ping"),
+                    &["init", nt, x, y, ref borders..] if borders.len() % 2 == 0 => {
+                        let v = borders.chunks(2).map(|s| Coordinate{
+                            x: s[0].parse().unwrap(),
+                            y: s[1].parse().unwrap(),
+                        }).collect::<Vec<_>>();
+                        serde_json::to_writer(&mut stream,
+                                              &Netmessage::Initialize{
+                                                    nt: nt.parse().unwrap(),
+                                                  ra: Coordinate{
+                                                      x: x.parse().unwrap(),
+                                                      y: y.parse().unwrap(),
+                                                  },
+                                                  bd: v,
+                                              }).unwrap();
+                        last_ping_time = time::Instant::now();
+                    }
+                    &["build"] => {
+                        serde_json::to_writer(&mut stream,
+                                              &Netmessage::GDBuild).unwrap();
+                    }
+                    &["init", ..] => {
+                        println!("Usage: init num_targets x y [border_x border_y]..");
+                    }
+                    _ => println!("Commands: move, rows, fakerow, ping, init, build"),
                 }
             }
             Err(TryRecvError::Disconnected) => panic!("Input lost."),
