@@ -70,6 +70,7 @@ fn main() {
 
     let mut row_requests = (0usize..0).peekable();
     let mut row_request_beginning = time::Instant::now();
+    let mut row_request_last = time::Instant::now();
 
     let mut last_ping_time = time::Instant::now();
 
@@ -105,6 +106,16 @@ fn main() {
         // Finish the render.
         target.finish().unwrap();
 
+        if let Some(n) = row_requests.peek() {
+            // If we havent heard back in some time.
+            if time::Instant::now() - row_request_last > time::Duration::from_millis(5000) {
+                // Resend the request.
+                serde_json::to_writer(&mut stream,
+                                      &Netmessage::GDReqHalfRow(*n as u8)).unwrap();
+                row_request_last = time::Instant::now();
+            }
+        }
+
         // Handle network messages.
         match msg_receiver.try_recv() {
             Ok(m) => {
@@ -122,11 +133,12 @@ fn main() {
                     Netmessage::GDHalfRow(v) => {
                         if let Some(n) = row_requests.next() {
                             use itertools::Itertools;
+                            row_request_last = time::Instant::now();
                             difficulty_grid.chunks_mut(64).nth(n as usize).unwrap().iter_mut().set_from(v);
                             // Check if this was the last one.
                             if row_requests.peek().is_none() {
                                 // Since it was, print out the duration.
-                                let difference = time::Instant::now() - row_request_beginning;
+                                let difference = row_request_last - row_request_beginning;
                                 println!("Half-row request fulfilled after {} seconds.",
                                          dursecond(difference));
                             } else {
@@ -175,6 +187,7 @@ fn main() {
 
                         serde_json::to_writer(&mut stream,
                               &Netmessage::GDReqHalfRow(n as u8)).unwrap();
+                        row_request_last = time::Instant::now();
                     }
                     &["rows", n, m] => {
                         let n: usize = n.parse().unwrap();
@@ -185,12 +198,13 @@ fn main() {
 
                             serde_json::to_writer(&mut stream,
                                                   &Netmessage::GDReqHalfRow(n as u8)).unwrap();
+                            row_request_last = time::Instant::now();
                         } else {
                             println!("Error: The first argument to \"rows\" must be less than the second.");
                         }
                     }
                     &["rows", ..] => {
-                        println!("Usage: rows start [end]");
+                        println!("Usage: rows [start] [end]");
                     }
                     &["fakerow"] => {
                         serde_json::to_writer(&mut stream,
@@ -200,6 +214,14 @@ fn main() {
                         serde_json::to_writer(&mut stream,
                                               &Netmessage::GDReqPing).unwrap();
                         last_ping_time = time::Instant::now();
+                    }
+                    &["finish"] => {
+                        serde_json::to_writer(&mut stream,
+                                              &Netmessage::GDFinish).unwrap();
+                    }
+                    &["aligned"] => {
+                        serde_json::to_writer(&mut stream,
+                                              &Netmessage::GDAligned).unwrap();
                     }
                     &["init", nt, x, y, ref borders..] if borders.len() % 2 == 0 => {
                         let v = borders.chunks(2).map(|s| Coordinate{
@@ -220,11 +242,15 @@ fn main() {
                     &["build"] => {
                         serde_json::to_writer(&mut stream,
                                               &Netmessage::GDBuild).unwrap();
+                        // Also clear the grid locally
+                        for e in &mut difficulty_grid {
+                            *e = 99;
+                        }
                     }
                     &["init", ..] => {
                         println!("Usage: init num_targets x y [border_x border_y]..");
                     }
-                    _ => println!("Commands: move, rows, fakerow, ping, init, build"),
+                    _ => println!("Commands: move, rows, fakerow, ping, init, build, finish, aligned"),
                 }
             }
             Err(TryRecvError::Disconnected) => panic!("Input lost."),
