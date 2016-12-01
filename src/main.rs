@@ -74,6 +74,10 @@ fn main() {
 
     let mut last_ping_time = time::Instant::now();
 
+    let mut debug_angle: f64 = 0.0;
+    let mut debug_x: f64 = 2.5;
+    let mut debug_y: f64 = 2.5;
+
     loop {
         // Get window dimensions.
         let dims = display.get_framebuffer_dimensions();
@@ -103,8 +107,59 @@ fn main() {
             }
         }).collect::<Vec<_>>());
 
+        // Render the looking direction.
+        glowy.render_edges_round(&mut target, [[1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]],
+                           projection, &[Node{
+                position: [debug_x as f32 / 5.0 * 2.0 - 1.0, debug_y as f32 / 5.0 * 2.0 - 1.0],
+                inner_color: [0.0, 1.0, 0.0, 1.0],
+                falloff: 0.5,
+                falloff_color: [0.0, 1.0, 0.0, 1.0],
+                falloff_radius: 1.0/128.0,
+                inner_radius: 0.0,
+            }, Node{
+                position: [(debug_x + debug_angle.cos()) as f32 / 5.0 * 2.0 - 1.0,
+                    (debug_y + debug_angle.sin()) as f32 / 5.0 * 2.0 - 1.0],
+                inner_color: [0.0, 1.0, 0.0, 1.0],
+                falloff: 0.5,
+                falloff_color: [0.0, 1.0, 0.0, 1.0],
+                falloff_radius: 1.0/128.0,
+                inner_radius: 0.0,
+            }]);
+
         // Finish the render.
         target.finish().unwrap();
+
+        for ev in display.poll_events() {
+            use glium::glutin::{Event, ElementState, VirtualKeyCode as VKC};
+            match ev {
+                Event::Closed => return,
+                Event::KeyboardInput(ElementState::Pressed, _, Some(VKC::Right)) => {
+                    debug_angle -= 0.1;
+                    serde_json::to_writer(&mut stream, &Netmessage::Movement(
+                        rnet::Point{
+                            x: debug_x,
+                            y: debug_y,
+                            v: 0.0,
+                            angle: debug_angle,
+                            av: 0.0,
+                        }
+                    )).unwrap();
+                }
+                Event::KeyboardInput(ElementState::Pressed, _, Some(VKC::Left)) => {
+                    debug_angle += 0.1;
+                    serde_json::to_writer(&mut stream, &Netmessage::Movement(
+                        rnet::Point{
+                            x: debug_x,
+                            y: debug_y,
+                            v: 0.0,
+                            angle: debug_angle,
+                            av: 0.0,
+                        }
+                    )).unwrap();
+                }
+                _ => {}
+            }
+        }
 
         if let Some(n) = row_requests.peek() {
             // If we havent heard back in some time.
@@ -150,6 +205,11 @@ fn main() {
                             println!("Warning: Got a half-row when none were requested.");
                         }
                     }
+                    Netmessage::Movement(p) => {
+                        debug_x = p.x;
+                        debug_y = p.y;
+                        debug_angle = p.angle;
+                    }
                     Netmessage::DebugGeordon(s) => {
                         println!("Debug message: {}", s);
                     }
@@ -179,6 +239,22 @@ fn main() {
                     }
                     &["move", ..] => {
                         println!("Usage: move x y v angle av");
+                    }
+                    &["turn", angle] => {
+                        let ang: f64 = angle.parse().unwrap();
+                        debug_angle += ang;
+                        serde_json::to_writer(&mut stream, &Netmessage::Movement(
+                            rnet::Point{
+                                x: debug_x,
+                                y: debug_y,
+                                v: 0.0,
+                                angle: debug_angle,
+                                av: 0.0,
+                            }
+                        )).unwrap();
+                    }
+                    &["turn", ..] => {
+                        println!("Usage: turn angle");
                     }
                     &["rows", n] => {
                         let n: usize = n.parse().unwrap();
@@ -224,6 +300,11 @@ fn main() {
                                               &Netmessage::GDAligned).unwrap();
                     }
                     &["init", nt, x, y, ref borders..] if borders.len() % 2 == 0 => {
+                        let acx = x.parse().unwrap();
+                        let acy = y.parse().unwrap();
+                        debug_x = acx;
+                        debug_y = acy;
+                        debug_angle = 0.0;
                         let v = borders.chunks(2).map(|s| Coordinate{
                             x: s[0].parse().unwrap(),
                             y: s[1].parse().unwrap(),
@@ -232,8 +313,8 @@ fn main() {
                                               &Netmessage::Initialize{
                                                     nt: nt.parse().unwrap(),
                                                   ra: Coordinate{
-                                                      x: x.parse().unwrap(),
-                                                      y: y.parse().unwrap(),
+                                                      x: acx,
+                                                      y: acy,
                                                   },
                                                   bd: v,
                                               }).unwrap();
@@ -250,7 +331,7 @@ fn main() {
                     &["init", ..] => {
                         println!("Usage: init num_targets x y [border_x border_y]..");
                     }
-                    _ => println!("Commands: move, rows, fakerow, ping, init, build, finish, aligned"),
+                    _ => println!("Commands: move, rows, fakerow, ping, init, build, finish, aligned, turn"),
                 }
             }
             Err(TryRecvError::Disconnected) => panic!("Input lost."),
